@@ -29,12 +29,12 @@ import qualified Cardano.Crypto.DSIGN.Class as Crypto
 import qualified Cardano.Crypto.Seed as Crypto
 import qualified Cardano.Crypto.Wallet as Crypto.HD
 
+import qualified Cardano.Chain.Common as Byron
 import qualified Cardano.Crypto.Hashing as Byron
 import qualified Cardano.Crypto.Signing as Byron
-import qualified Cardano.Chain.Common as Byron
 
-import           Cardano.Api.HasTypeProxy
 import           Cardano.Api.Hash
+import           Cardano.Api.HasTypeProxy
 import           Cardano.Api.Key
 import           Cardano.Api.KeysShelley
 import           Cardano.Api.SerialiseBech32
@@ -54,10 +54,17 @@ import           Cardano.Api.SerialiseTextEnvelope
 -- This is a type level tag, used with other interfaces like 'Key'.
 --
 data ByronKey
+-- | This type level tag refers to the Byron era in which
+-- we were use the protocol prior to PBFT.
+data ByronKeyLegacy
 
 instance HasTypeProxy ByronKey where
     data AsType ByronKey = AsByronKey
     proxyToAsType _ = AsByronKey
+
+instance HasTypeProxy ByronKeyLegacy where
+    data AsType ByronKeyLegacy = AsByronKeyLegacy
+    proxyToAsType _ = AsByronKeyLegacy
 
 instance Key ByronKey where
 
@@ -89,6 +96,41 @@ instance Key ByronKey where
     verificationKeyHash (ByronVerificationKey vkey) =
       ByronKeyHash (Byron.hashKey vkey)
 
+-- TODO: Probably don't want to generate more legacy keys
+-- Need to implement the HasTextEnvelope instances
+instance Key ByronKeyLegacy where
+
+    newtype VerificationKey ByronKeyLegacy =
+           ByronVerificationKeyLegacy Byron.VerificationKey
+      deriving stock (Eq)
+      deriving (Show, IsString) via UsingRawBytesHex (VerificationKey ByronKey)
+      deriving newtype (ToCBOR, FromCBOR)
+      deriving anyclass SerialiseAsCBOR
+
+    newtype SigningKey ByronKeyLegacy =
+           ByronSigningKeyLegacy Byron.SigningKey
+      deriving (Show, IsString) via UsingRawBytesHex (SigningKey ByronKey)
+      deriving newtype (ToCBOR, FromCBOR)
+      deriving anyclass SerialiseAsCBOR
+
+    deterministicSigningKey :: AsType ByronKeyLegacy -> Crypto.Seed -> SigningKey ByronKeyLegacy
+    deterministicSigningKey AsByronKeyLegacy seed =
+       ByronSigningKeyLegacy (snd (Crypto.runMonadRandomWithSeed seed Byron.keyGen))
+
+    deterministicSigningKeySeedSize :: AsType ByronKeyLegacy -> Word
+    deterministicSigningKeySeedSize AsByronKeyLegacy = 32
+
+    getVerificationKey :: SigningKey ByronKeyLegacy -> VerificationKey ByronKeyLegacy
+    getVerificationKey (ByronSigningKeyLegacy sk) =
+      ByronVerificationKeyLegacy (Byron.toVerification sk)
+
+    verificationKeyHash :: VerificationKey ByronKeyLegacy -> Hash ByronKeyLegacy
+    verificationKeyHash (ByronVerificationKeyLegacy vkey) =
+      ByronKeyHashLegacy (Byron.hashKey vkey)
+
+newtype instance Hash ByronKeyLegacy = ByronKeyHashLegacy Byron.KeyHash
+  deriving (Eq, Ord)
+  deriving (Show, IsString) via UsingRawBytesHex (Hash ByronKey)
 
 instance SerialiseAsRawBytes (VerificationKey ByronKey) where
     serialiseToRawBytes (ByronVerificationKey (Byron.VerificationKey xvk)) =
@@ -104,6 +146,14 @@ instance SerialiseAsRawBytes (SigningKey ByronKey) where
 
     deserialiseFromRawBytes (AsSigningKey AsByronKey) bs =
       either (const Nothing) (Just . ByronSigningKey . Byron.SigningKey)
+             (Crypto.HD.xprv bs)
+
+instance SerialiseAsRawBytes (SigningKey ByronKeyLegacy) where
+    serialiseToRawBytes (ByronSigningKeyLegacy (Byron.SigningKey xsk)) =
+      Crypto.HD.unXPrv xsk
+
+    deserialiseFromRawBytes (AsSigningKey AsByronKeyLegacy) bs =
+      either (const Nothing) (Just . ByronSigningKeyLegacy . Byron.SigningKey)
              (Crypto.HD.xprv bs)
 
 instance SerialiseAsBech32 (VerificationKey ByronKey) where

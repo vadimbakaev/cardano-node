@@ -44,9 +44,10 @@ import qualified Cardano.CLI.Byron.Legacy as Legacy
 import           Cardano.CLI.Helpers (textShow)
 import           Cardano.CLI.Shelley.Commands (ByronKeyFormat (..))
 import           Cardano.CLI.Types
-import           Cardano.Crypto (SigningKey (..))
-import qualified Cardano.Crypto.Random as Crypto
-import qualified Cardano.Crypto.Signing as Crypto
+import qualified Cardano.Crypto as Crypto
+
+import           Cardano.API
+import           Cardano.Api.Typed
 
 
 data ByronKeyFailure
@@ -93,16 +94,16 @@ serialiseSigningKey
 serialiseSigningKey _ (Crypto.SigningKey k) = pure $ toLazyByteString (Crypto.toCBORXPrv k)
 
 deserialiseSigningKey :: ByronKeyFormat -> FilePath -> LB.ByteString
-                      -> Either ByronKeyFailure SigningKey
+                      -> Either ByronKeyFailure (SigningKey ByronKey)
 deserialiseSigningKey LegacyByronKeyFormat fp delSkey =
   case deserialiseFromBytes Legacy.decodeLegacyDelegateKey delSkey of
     Left deSerFail -> Left $ SigningKeyDeserialisationFailed fp deSerFail
-    Right (_, Legacy.LegacyDelegateKey sKey ) -> pure sKey
+    Right (_, Legacy.LegacyDelegateKey sKey ) -> pure $ ByronSigningKey sKey
 
 deserialiseSigningKey NonLegacyByronKeyFormat fp delSkey =
   case deserialiseFromBytes Crypto.fromCBORXPrv delSkey of
     Left deSerFail -> Left $ SigningKeyDeserialisationFailed fp deSerFail
-    Right (_, sKey) -> Right $ SigningKey sKey
+    Right (_, sKey) -> pure . ByronSigningKey $ Crypto.SigningKey sKey
 
 
 -- | Print some invariant properties of a public key:
@@ -117,7 +118,7 @@ prettyPublicKey vk =
 -- TODO:  we need to support password-protected secrets.
 -- | Read signing key from a file.  Throw an error if the file can't be read or
 -- fails to deserialise.
-readEraSigningKey :: ByronKeyFormat -> SigningKeyFile -> ExceptT ByronKeyFailure IO SigningKey
+readEraSigningKey :: ByronKeyFormat -> SigningKeyFile -> ExceptT ByronKeyFailure IO (SigningKey ByronKey)
 readEraSigningKey bKeyFormat (SigningKeyFile fp) = do
   sK <- handleIOExceptT (ReadSigningKeyFailure fp . T.pack . displayException) $ LB.readFile fp
 
@@ -142,9 +143,9 @@ serialisePoorKey bKeyFormat ps =
 
 -- | Generate a cryptographically random signing key,
 --   protected with a (potentially empty) passphrase.
-keygen :: Crypto.PassPhrase -> IO SigningKey
+keygen :: Crypto.PassPhrase -> IO (SigningKey ByronKey)
 keygen passphrase =
-  snd <$> Crypto.runSecureRandom (Crypto.safeKeyGen passphrase)
+  ByronSigningKey . snd <$> Crypto.runSecureRandom (Crypto.safeKeyGen passphrase)
 
 -- | Get a passphrase from the standard input,
 --   depending on whether it's required.

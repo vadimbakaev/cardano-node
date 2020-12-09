@@ -26,18 +26,20 @@ import           Cardano.Chain.Update (AProposal (..), InstallerHash (..), Propo
                      SoftforkRule (..), SoftwareVersion (..), SystemTag (..), recoverUpId,
                      signProposal)
 import           Cardano.CLI.Helpers (HelpersError, ensureNewFileLBS, renderHelpersError, textShow)
-import           Cardano.Crypto.Signing (SigningKey, noPassSafeSigner)
+import           Cardano.Crypto.Signing (noPassSafeSigner)
+import qualified Cardano.Crypto.Signing as Crypto
 import           Ouroboros.Consensus.Byron.Ledger.Block (ByronBlock)
 import qualified Ouroboros.Consensus.Byron.Ledger.Mempool as Mempool
 import           Ouroboros.Consensus.Ledger.SupportsMempool (txId)
 import           Ouroboros.Consensus.Util.Condense (condense)
 
-import           Cardano.Api.Typed (NetworkId, toByronProtocolMagicId)
+import           Cardano.Api.Typed (NetworkId, SigningKey (..), toByronProtocolMagicId)
 import           Cardano.CLI.Byron.Genesis (ByronGenesisError)
 import           Cardano.CLI.Byron.Key (ByronKeyFailure, readEraSigningKey)
 import           Cardano.CLI.Byron.Tx (ByronTxError, nodeSubmitTx)
 import           Cardano.CLI.Shelley.Commands (ByronKeyFormat (..))
 import           Cardano.CLI.Types
+
 data ByronUpdateProposalError
   = ByronReadUpdateProposalFileFailure !FilePath !Text
   | ByronUpdateProposalWriteError !HelpersError
@@ -75,7 +77,7 @@ runProposalCreation
   -> ExceptT ByronUpdateProposalError IO ()
 runProposalCreation nw sKey@(SigningKeyFile sKeyfp) pVer sVer
                     sysTag insHash outputFp params = do
-  sK <- firstExceptT (ReadSigningKeyFailure sKeyfp) $ readEraSigningKey NonLegacyByronKeyFormat sKey
+  ByronSigningKey sK <- firstExceptT (ReadSigningKeyFailure sKeyfp) $ readEraSigningKey NonLegacyByronKeyFormat sKey
   let proposal = createUpdateProposal nw sK pVer sVer sysTag insHash params
   firstExceptT ByronUpdateProposalWriteError $
     ensureNewFileLBS outputFp (serialiseByronUpdateProposal proposal)
@@ -130,7 +132,7 @@ convertProposalToGenTx prop = Mempool.ByronUpdateProposal (recoverUpId prop) pro
 
 createUpdateProposal
   :: NetworkId
-  -> SigningKey
+  -> Crypto.SigningKey
   -> ProtocolVersion
   -> SoftwareVersion
   -> SystemTag

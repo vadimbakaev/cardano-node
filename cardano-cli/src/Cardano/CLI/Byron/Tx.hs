@@ -38,16 +38,16 @@ import           Cardano.Chain.Genesis as Genesis
 import           Cardano.Chain.Slotting (EpochSlots (..))
 import           Cardano.Chain.UTxO (Tx (..), TxId, TxIn, TxOut, annotateTxAux, mkTxAux)
 import qualified Cardano.Chain.UTxO as UTxO
-import           Cardano.Crypto (ProtocolMagicId, SigningKey (..))
-import qualified Cardano.Crypto.Hashing as Crypto
-import qualified Cardano.Crypto.Signing as Crypto
+import           Cardano.Crypto (ProtocolMagicId)
+import qualified Cardano.Crypto as Crypto
 
 import           Ouroboros.Consensus.Byron.Ledger (ByronBlock, GenTx (..))
 import qualified Ouroboros.Consensus.Byron.Ledger as Byron
 import           Ouroboros.Consensus.HardFork.Combinator.Degenerate (GenTx (DegenGenTx))
 
+import           Cardano.Api.Byron (ByronKey)
 import           Cardano.Api.Typed (LocalNodeConnectInfo (..), NetworkId, NodeConsensusMode (..),
-                     submitTxToNodeLocal, toByronProtocolMagicId)
+                     SigningKey (..), submitTxToNodeLocal, toByronProtocolMagicId)
 import           Cardano.CLI.Environment
 import           Cardano.CLI.Helpers (textShow)
 import           Cardano.CLI.Types (SocketPath (..))
@@ -95,8 +95,8 @@ normalByronTxToGenTx tx' = Byron.ByronTx (Byron.byronIdTx tx') tx'
 
 -- | Given a Tx id, produce a UTxO Tx input witness, by signing it
 --   with respect to a given protocol magic.
-signTxId :: ProtocolMagicId -> SigningKey -> TxId -> UTxO.TxInWitness
-signTxId pmid sk txid =
+signTxId :: ProtocolMagicId -> SigningKey ByronKey -> TxId -> UTxO.TxInWitness
+signTxId pmid (ByronSigningKey sk) txid =
   UTxO.VKWitness
   (Crypto.toVerification sk)
   (Crypto.sign
@@ -149,7 +149,7 @@ genesisUTxOTxIn gc vk genAddr =
 txSpendGenesisUTxOByronPBFT
   :: Genesis.Config
   -> NetworkId
-  -> SigningKey
+  -> Crypto.SigningKey
   -> Address
   -> NonEmpty TxOut
   -> UTxO.ATxAux ByteString
@@ -158,7 +158,7 @@ txSpendGenesisUTxOByronPBFT gc nw sk genAddr outs =
   where
     tx = UnsafeTx (pure txIn) outs txattrs
 
-    wit = signTxId (toByronProtocolMagicId nw) sk (Crypto.serializeCborHash tx)
+    wit = signTxId (toByronProtocolMagicId nw) (ByronSigningKey sk) (Crypto.serializeCborHash tx)
 
     txIn :: UTxO.TxIn
     txIn  = genesisUTxOTxIn gc (Crypto.toVerification sk) genAddr
@@ -169,7 +169,7 @@ txSpendGenesisUTxOByronPBFT gc nw sk genAddr outs =
 --   signed by the given key.
 txSpendUTxOByronPBFT
   :: NetworkId
-  -> SigningKey
+  -> (SigningKey ByronKey)
   -> NonEmpty TxIn
   -> NonEmpty TxOut
   -> UTxO.ATxAux ByteString

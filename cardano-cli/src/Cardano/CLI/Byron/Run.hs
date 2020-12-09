@@ -21,7 +21,7 @@ import           Cardano.Chain.UTxO (TxIn, TxOut)
 import qualified Cardano.Crypto.Hashing as Crypto
 import qualified Cardano.Crypto.Signing as Crypto
 
-import           Cardano.Api.Typed (NetworkId (..), toByronProtocolMagicId)
+import           Cardano.Api.Typed (NetworkId (..), SigningKey (..), toByronProtocolMagicId)
 import qualified Cardano.Api.Typed as Typed
 
 import           Cardano.CLI.Byron.Commands
@@ -120,14 +120,14 @@ runPrettyPrintCBOR fp = do
 
 runPrettySigningKeyPublic :: ByronKeyFormat -> SigningKeyFile -> ExceptT ByronClientCmdError IO ()
 runPrettySigningKeyPublic bKeyFormat skF = do
-  sK <- firstExceptT ByronCmdKeyFailure $ readEraSigningKey bKeyFormat skF
+  ByronSigningKey sK <- firstExceptT ByronCmdKeyFailure $ readEraSigningKey bKeyFormat skF
   liftIO . putTextLn . prettyPublicKey $ Crypto.toVerification sK
 
 runMigrateDelegateKeyFrom
         :: ByronKeyFormat -> SigningKeyFile -> ByronKeyFormat -> NewSigningKeyFile
         -> ExceptT ByronClientCmdError IO ()
 runMigrateDelegateKeyFrom oldKeyformat oldKey newKeyFormat (NewSigningKeyFile newKey) = do
-  sk <- firstExceptT ByronCmdKeyFailure $ readEraSigningKey oldKeyformat oldKey
+  ByronSigningKey sk <- firstExceptT ByronCmdKeyFailure $ readEraSigningKey oldKeyformat oldKey
   sDk <- hoistEither . first ByronCmdDelegationError $ serialiseDelegateKey newKeyFormat sk
   firstExceptT ByronCmdHelpersError $ ensureNewFileLBS newKey sDk
 
@@ -149,7 +149,7 @@ runPrintGenesisHash genFp = do
 
 runPrintSigningKeyAddress :: ByronKeyFormat -> NetworkId -> SigningKeyFile -> ExceptT ByronClientCmdError IO ()
 runPrintSigningKeyAddress bKeyFormat networkid skF = do
-  sK <- firstExceptT ByronCmdKeyFailure $ readEraSigningKey bKeyFormat skF
+  ByronSigningKey sK <- firstExceptT ByronCmdKeyFailure $ readEraSigningKey bKeyFormat skF
   let sKeyAddress = prettyAddress
                   . Common.makeVerKeyAddress (Typed.toByronNetworkMagic networkid)
                   . Crypto.toVerification
@@ -159,13 +159,13 @@ runPrintSigningKeyAddress bKeyFormat networkid skF = do
 runKeygen :: ByronKeyFormat -> NewSigningKeyFile -> PasswordRequirement -> ExceptT ByronClientCmdError IO ()
 runKeygen bKeyFormat (NewSigningKeyFile skF) passReq = do
   pPhrase <- liftIO $ getPassphrase ("Enter password to encrypt '" <> skF <> "': ") passReq
-  sK <- liftIO $ keygen pPhrase
+  ByronSigningKey sK <- liftIO $ keygen pPhrase
   serDk <- hoistEither . first ByronCmdDelegationError $ serialiseDelegateKey bKeyFormat sK
   firstExceptT ByronCmdHelpersError $ ensureNewFileLBS skF serDk
 
 runToVerification :: ByronKeyFormat -> SigningKeyFile -> NewVerificationKeyFile -> ExceptT ByronClientCmdError IO ()
 runToVerification bKeyFormat skFp (NewVerificationKeyFile vkFp) = do
-  sk <- firstExceptT ByronCmdKeyFailure $ readEraSigningKey bKeyFormat skFp
+  ByronSigningKey sk <- firstExceptT ByronCmdKeyFailure $ readEraSigningKey bKeyFormat skFp
   let vKey = Builder.toLazyText . Crypto.formatFullVerificationKey $ Crypto.toVerification sk
   firstExceptT ByronCmdHelpersError $ ensureNewFile TL.writeFile vkFp vKey
 
@@ -179,7 +179,7 @@ runIssueDelegationCertificate
   -> ExceptT ByronClientCmdError IO ()
 runIssueDelegationCertificate nw bKeyFormat epoch issuerSK delegateVK cert = do
   vk <- firstExceptT ByronCmdKeyFailure $ readPaymentVerificationKey delegateVK
-  sk <- firstExceptT ByronCmdKeyFailure $ readEraSigningKey bKeyFormat issuerSK
+  ByronSigningKey sk <- firstExceptT ByronCmdKeyFailure $ readEraSigningKey bKeyFormat issuerSK
   let byGenDelCert :: Delegation.Certificate
       byGenDelCert = issueByronGenesisDelegation (toByronProtocolMagicId nw) epoch sk vk
       sCert        = serialiseDelegationCert byGenDelCert
@@ -223,7 +223,7 @@ runSpendGenesisUTxO
   -> ExceptT ByronClientCmdError IO ()
 runSpendGenesisUTxO genesisFile nw bKeyFormat (NewTxFile ctTx) ctKey genRichAddr outs = do
     genesis <- firstExceptT ByronCmdGenesisError $ readGenesis genesisFile nw
-    sk <- firstExceptT ByronCmdKeyFailure $ readEraSigningKey bKeyFormat ctKey
+    ByronSigningKey sk <- firstExceptT ByronCmdKeyFailure $ readEraSigningKey bKeyFormat ctKey
 
     let tx = txSpendGenesisUTxOByronPBFT genesis nw sk genRichAddr outs
     firstExceptT ByronCmdHelpersError $ ensureNewFileLBS ctTx $ toCborTxAux tx

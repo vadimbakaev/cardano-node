@@ -330,7 +330,7 @@ convertByronSigningKey mPwd byronFormat convert
                        skeyPathOld
                        (OutputFile skeyPathNew) = do
 
-    sk@(Crypto.SigningKey xprv) <-
+    (ByronSigningKey sk@(Crypto.SigningKey xprv)) <-
       firstExceptT ShelleyKeyCmdByronKeyFailure
         $ Byron.readEraSigningKey byronFormat skeyPathOld
 
