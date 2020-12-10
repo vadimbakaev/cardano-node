@@ -66,6 +66,16 @@ module Cardano.Api.Byron
     -- * Address
     NetworkMagic(..),
 
+    -- * Update Proposal
+    ByronUpdateProposal(..),
+    serialiseByronUpdateProposal,
+    deserialiseByronUpdateProposal,
+
+    -- * Vote
+    ByronVote(..),
+    serialiseByronVote,
+    deserialiseByronVote,
+
     -- ** Conversions
     toByronNetworkMagic,
     toByronProtocolMagicId,
@@ -74,4 +84,5 @@ module Cardano.Api.Byron
   ) where
 
 import           Cardano.API
+import           Cardano.Api.SpecialByron
 import           Cardano.Api.Typed

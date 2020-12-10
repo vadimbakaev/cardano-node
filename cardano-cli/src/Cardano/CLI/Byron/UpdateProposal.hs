@@ -5,7 +5,6 @@ module Cardano.CLI.Byron.UpdateProposal
   , ParametersToUpdate(..)
   , runProposalCreation
   , createUpdateProposal
-  , deserialiseByronUpdateProposal
   , readByronUpdateProposal
   , renderByronUpdateProposalError
   , submitByronUpdateProposal
@@ -15,16 +14,16 @@ import           Cardano.Prelude
 
 import           Control.Monad.Trans.Except.Extra (firstExceptT, handleIOExceptT, hoistEither)
 import           Control.Tracer (stdoutTracer, traceWith)
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LB
 import qualified Data.Map.Strict as M
 
 import qualified Cardano.Binary as Binary
 import           Cardano.Chain.Common (LovelacePortion, TxFeePolicy (..))
 import           Cardano.Chain.Slotting (EpochNumber (..), SlotNumber (..))
-import           Cardano.Chain.Update (AProposal (..), InstallerHash (..), Proposal,
-                     ProposalBody (..), ProtocolParametersUpdate (..), ProtocolVersion (..),
-                     SoftforkRule (..), SoftwareVersion (..), SystemTag (..), recoverUpId,
-                     signProposal)
+import           Cardano.Chain.Update (AProposal (..), InstallerHash (..), ProposalBody (..),
+                     ProtocolParametersUpdate (..), ProtocolVersion (..), SoftforkRule (..),
+                     SoftwareVersion (..), SystemTag (..), recoverUpId, signProposal)
 import           Cardano.CLI.Helpers (HelpersError, ensureNewFileLBS, renderHelpersError, textShow)
 import           Cardano.Crypto.Signing (noPassSafeSigner)
 import qualified Cardano.Crypto.Signing as Crypto
@@ -33,6 +32,8 @@ import qualified Ouroboros.Consensus.Byron.Ledger.Mempool as Mempool
 import           Ouroboros.Consensus.Ledger.SupportsMempool (txId)
 import           Ouroboros.Consensus.Util.Condense (condense)
 
+import           Cardano.Api.Byron (ByronUpdateProposal (..), deserialiseByronUpdateProposal,
+                     serialiseByronUpdateProposal)
 import           Cardano.Api.Typed (NetworkId, SigningKey (..), toByronProtocolMagicId)
 import           Cardano.CLI.Byron.Genesis (ByronGenesisError)
 import           Cardano.CLI.Byron.Key (ByronKeyFailure, readEraSigningKey)
@@ -80,7 +81,7 @@ runProposalCreation nw sKey@(SigningKeyFile sKeyfp) pVer sVer
   ByronSigningKey sK <- firstExceptT (ReadSigningKeyFailure sKeyfp) $ readEraSigningKey NonLegacyByronKeyFormat sKey
   let proposal = createUpdateProposal nw sK pVer sVer sysTag insHash params
   firstExceptT ByronUpdateProposalWriteError $
-    ensureNewFileLBS outputFp (serialiseByronUpdateProposal proposal)
+    ensureNewFileLBS outputFp . LB.fromStrict $ (serialiseByronUpdateProposal proposal)
 
 
 data ParametersToUpdate =
@@ -138,7 +139,7 @@ createUpdateProposal
   -> SystemTag
   -> InstallerHash
   -> [ParametersToUpdate]
-  -> Proposal
+  -> AProposal ()
 createUpdateProposal nw sKey pVer sVer sysTag inshash paramsToUpdate =
     signProposal (toByronProtocolMagicId nw) proposalBody noPassSigningKey
   where
@@ -169,23 +170,10 @@ emptyProtocolParametersUpdate =
     , ppuUnlockStakeEpoch = Nothing
     }
 
-serialiseByronUpdateProposal :: Proposal -> LByteString
-serialiseByronUpdateProposal = Binary.serialize
-
-deserialiseByronUpdateProposal :: LByteString
-                               -> Either ByronUpdateProposalError (AProposal ByteString)
-deserialiseByronUpdateProposal bs =
-  case Binary.decodeFull bs of
-    Left deserFail -> Left $ UpdateProposalDecodingError deserFail
-    Right proposal -> Right $ annotateProposal proposal
- where
-  annotateProposal :: AProposal Binary.ByteSpan -> AProposal ByteString
-  annotateProposal proposal = Binary.annotationBytes bs proposal
-
-readByronUpdateProposal :: FilePath -> ExceptT ByronUpdateProposalError IO LByteString
+readByronUpdateProposal :: FilePath -> ExceptT ByronUpdateProposalError IO ByteString
 readByronUpdateProposal fp =
   handleIOExceptT (ByronReadUpdateProposalFileFailure fp . toS . displayException)
-                  (LB.readFile fp)
+                  (BS.readFile fp)
 
 
 submitByronUpdateProposal
@@ -194,7 +182,7 @@ submitByronUpdateProposal
   -> ExceptT ByronUpdateProposalError IO ()
 submitByronUpdateProposal network proposalFp = do
     proposalBs <- readByronUpdateProposal proposalFp
-    aProposal <- hoistEither $ deserialiseByronUpdateProposal proposalBs
+    ByronUpdateProposal aProposal <- firstExceptT UpdateProposalDecodingError (hoistEither $ deserialiseByronUpdateProposal proposalBs)
     let genTx = convertProposalToGenTx aProposal
     traceWith stdoutTracer $
       "Update proposal TxId: " ++ condense (txId genTx)

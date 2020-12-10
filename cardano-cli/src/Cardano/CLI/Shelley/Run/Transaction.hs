@@ -19,7 +19,7 @@ import qualified Data.Aeson as Aeson
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Text as Text
-import           Data.Type.Equality (TestEquality(..))
+import           Data.Type.Equality (TestEquality (..))
 
 import           Control.Monad.Trans.Except.Extra (firstExceptT, handleIOExceptT, hoistEither, left,
                      newExceptT)
@@ -42,9 +42,9 @@ import           Cardano.CLI.Shelley.Key (InputDecodeError, readSigningKeyFileAn
 import           Cardano.CLI.Shelley.Parsers
 import           Cardano.CLI.Types
 
-import           Cardano.Api.Typed as Api
 import           Cardano.Api.Protocol
 import           Cardano.Api.TxSubmit as Api
+import           Cardano.Api.Typed as Api
 
 data ShelleyTxCmdError
   = ShelleyTxCmdAesonDecodeProtocolParamsError !FilePath !Text

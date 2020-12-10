@@ -162,6 +162,7 @@ instance SerialiseAsRawBytes (SigningKey ByronKey) where
       either (const Nothing) (Just . ByronSigningKey . Byron.SigningKey)
              (Crypto.HD.xprv bs)
 
+-- TODO: This needs to use the legacy stuff in cardano-cli
 instance SerialiseAsRawBytes (SigningKey ByronKeyLegacy) where
     serialiseToRawBytes (ByronSigningKeyLegacy (Byron.SigningKey xsk)) =
       Crypto.HD.unXPrv xsk

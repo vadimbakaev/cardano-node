@@ -11,16 +11,17 @@ import           Cardano.Prelude
 
 import           Control.Monad.Trans.Except.Extra (firstExceptT, hoistEither)
 import           Control.Tracer (stdoutTracer, traceWith)
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as LB
 import qualified Data.Text as Text
 
 
 import qualified Cardano.Binary as Binary
-import           Cardano.Chain.Update (AVote (..), Vote, mkVote, recoverUpId, recoverVoteId)
+import           Cardano.Chain.Update (AVote (..), mkVote, recoverUpId, recoverVoteId)
 import           Cardano.CLI.Byron.UpdateProposal (ByronUpdateProposalError,
-                     deserialiseByronUpdateProposal, readByronUpdateProposal)
+                     readByronUpdateProposal)
 import           Ouroboros.Consensus.Byron.Ledger.Block (ByronBlock)
-import           Ouroboros.Consensus.Byron.Ledger.Mempool (GenTx (..))
+import qualified Ouroboros.Consensus.Byron.Ledger.Mempool as Mempool
 import           Ouroboros.Consensus.Ledger.SupportsMempool (txId)
 import           Ouroboros.Consensus.Util.Condense (condense)
 
@@ -41,6 +42,7 @@ data ByronVoteError
   | ByronVoteReadFileFailure !FilePath !Text
   | ByronVoteTxSubmissionError !ByronTxError
   | ByronVoteUpdateProposalFailure !ByronUpdateProposalError
+  | ByronVoteUpdateProposalDecodingError !Binary.DecoderError
   | ByronVoteUpdateHelperError !HelpersError
   deriving Show
 
@@ -51,6 +53,7 @@ renderByronVoteError bVerr =
     ByronVoteGenesisReadError genErr -> "Error reading the genesis file:" <> Text.pack (show genErr)
     ByronVoteReadFileFailure fp err -> "Error reading Byron vote at " <> Text.pack fp <> " Error: " <> err
     ByronVoteTxSubmissionError txErr -> "Error submitting the transaction: " <> Text.pack (show txErr)
+    ByronVoteUpdateProposalDecodingError err -> "Error decoding Byron update proposal: " <> Text.pack (show err)
     ByronVoteUpdateProposalFailure err -> "Error reading the update proposal: " <> Text.pack (show err)
     ByronVoteUpdateHelperError err ->"Error creating the vote: " <> Text.pack (show err)
     ByronVoteKeyReadFailure err -> "Error reading the signing key: " <> Text.pack (show err)
@@ -67,34 +70,21 @@ runVoteCreation nw sKey upPropFp voteBool outputFp = do
   ByronSigningKey sK <- firstExceptT ByronVoteKeyReadFailure $ readEraSigningKey NonLegacyByronKeyFormat sKey
   -- TODO: readByronUpdateProposal & deserialiseByronUpdateProposal should be one function
   upProp <- firstExceptT ByronVoteUpdateProposalFailure $ readByronUpdateProposal upPropFp
-  proposal <- hoistEither . first ByronVoteUpdateProposalFailure $ deserialiseByronUpdateProposal upProp
+  ByronUpdateProposal proposal <- firstExceptT ByronVoteUpdateProposalDecodingError (hoistEither $ deserialiseByronUpdateProposal upProp)
   let updatePropId = recoverUpId proposal
       vote = mkVote (toByronProtocolMagicId nw) sK updatePropId voteBool
-  firstExceptT ByronVoteUpdateHelperError $ ensureNewFileLBS outputFp (serialiseByronVote vote)
+  firstExceptT ByronVoteUpdateHelperError . ensureNewFileLBS outputFp . LB.fromStrict $ serialiseByronVote vote
 
-convertVoteToGenTx :: AVote ByteString -> GenTx ByronBlock
-convertVoteToGenTx vote = ByronUpdateVote (recoverVoteId vote) vote
-
-deserialiseByronVote :: LByteString -> Either ByronVoteError (AVote ByteString)
-deserialiseByronVote bs =
-  case Binary.decodeFull bs of
-    Left deserFail -> Left $ ByronVoteDecodingError deserFail
-    Right vote -> Right $ annotateVote vote
- where
-  annotateVote :: AVote Binary.ByteSpan -> AVote ByteString
-  annotateVote vote = Binary.annotationBytes bs vote
-
-
-serialiseByronVote :: Vote -> LByteString
-serialiseByronVote = Binary.serialize
+convertVoteToGenTx :: AVote ByteString -> Mempool.GenTx ByronBlock
+convertVoteToGenTx vote = Mempool.ByronUpdateVote (recoverVoteId vote) vote
 
 submitByronVote
   :: NetworkId
   -> FilePath
   -> ExceptT ByronVoteError IO ()
 submitByronVote network voteFp = do
-    voteBs <- liftIO $ LB.readFile voteFp
-    vote <- hoistEither $ deserialiseByronVote voteBs
+    voteBs <- liftIO $ BS.readFile voteFp
+    ByronVote vote <- firstExceptT ByronVoteDecodingError (hoistEither $ deserialiseByronVote voteBs)
     let genTx = convertVoteToGenTx vote
     traceWith stdoutTracer ("Vote TxId: " ++ condense (txId genTx))
     firstExceptT ByronVoteTxSubmissionError $ nodeSubmitTx network genTx
