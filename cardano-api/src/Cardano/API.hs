@@ -67,6 +67,7 @@ module Cardano.API (
     -- ** Byron addresses
     makeByronAddress,
     ByronKey,
+    ByronKeyLegacy,
 
     -- ** Shelley addresses
     makeShelleyAddress,

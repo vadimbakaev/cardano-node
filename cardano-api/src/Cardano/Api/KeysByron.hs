@@ -13,6 +13,7 @@ module Cardano.Api.KeysByron (
 
     -- * Key types
     ByronKey,
+    ByronKeyLegacy,
 
     -- * Data family instances
     AsType(..),
@@ -96,7 +97,7 @@ instance Key ByronKey where
     verificationKeyHash (ByronVerificationKey vkey) =
       ByronKeyHash (Byron.hashKey vkey)
 
--- TODO: Probably don't want to generate more legacy keys
+
 -- Need to implement the HasTextEnvelope instances
 instance Key ByronKeyLegacy where
 
@@ -112,18 +113,18 @@ instance Key ByronKeyLegacy where
       deriving (Show, IsString) via UsingRawBytesHex (SigningKey ByronKey)
       deriving newtype (ToCBOR, FromCBOR)
       deriving anyclass SerialiseAsCBOR
-
+    -- TODO: Probably don't want to generate more legacy keys
     deterministicSigningKey :: AsType ByronKeyLegacy -> Crypto.Seed -> SigningKey ByronKeyLegacy
     deterministicSigningKey AsByronKeyLegacy seed =
        ByronSigningKeyLegacy (snd (Crypto.runMonadRandomWithSeed seed Byron.keyGen))
-
+    -- TODO: Double check
     deterministicSigningKeySeedSize :: AsType ByronKeyLegacy -> Word
     deterministicSigningKeySeedSize AsByronKeyLegacy = 32
-
+    -- TODO: Double check
     getVerificationKey :: SigningKey ByronKeyLegacy -> VerificationKey ByronKeyLegacy
     getVerificationKey (ByronSigningKeyLegacy sk) =
       ByronVerificationKeyLegacy (Byron.toVerification sk)
-
+    -- TODO: Double check
     verificationKeyHash :: VerificationKey ByronKeyLegacy -> Hash ByronKeyLegacy
     verificationKeyHash (ByronVerificationKeyLegacy vkey) =
       ByronKeyHashLegacy (Byron.hashKey vkey)
@@ -131,6 +132,19 @@ instance Key ByronKeyLegacy where
 newtype instance Hash ByronKeyLegacy = ByronKeyHashLegacy Byron.KeyHash
   deriving (Eq, Ord)
   deriving (Show, IsString) via UsingRawBytesHex (Hash ByronKey)
+
+instance SerialiseAsRawBytes (Hash ByronKeyLegacy) where
+    serialiseToRawBytes (ByronKeyHashLegacy (Byron.KeyHash vkh)) =
+      Byron.abstractHashToBytes vkh
+
+    deserialiseFromRawBytes (AsHash AsByronKeyLegacy) bs =
+      ByronKeyHashLegacy . Byron.KeyHash <$> Byron.abstractHashFromBytes bs
+
+instance HasTextEnvelope (VerificationKey ByronKeyLegacy) where
+    textEnvelopeType _ = "PaymentVerificationKeyByronLegacy_ed25519_bip32"
+
+instance HasTextEnvelope (SigningKey ByronKeyLegacy) where
+    textEnvelopeType _ = "PaymentSigningKeyByronLegacy_ed25519_bip32"
 
 instance SerialiseAsRawBytes (VerificationKey ByronKey) where
     serialiseToRawBytes (ByronVerificationKey (Byron.VerificationKey xvk)) =
