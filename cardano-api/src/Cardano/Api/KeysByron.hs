@@ -184,7 +184,7 @@ instance SerialiseAsRawBytes (SigningKey ByronKeyLegacy) where
             CBOR.decodeSequenceLenIndef (flip (:)) [] reverse CBOR.decodeNull
           _    <- do
             enforceSize "wallet" 0
-          pure $ pkey
+          pure pkey
 
 instance CastVerificationKeyRole ByronKeyLegacy ByronKey where
     castVerificationKey (ByronVerificationKeyLegacy vk) =
